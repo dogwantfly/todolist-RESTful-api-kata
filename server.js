@@ -1,109 +1,84 @@
 const http = require('http');
-const { v4: uuidv4 } = require('uuid');
+const todosRouteHandlers = require('./routes/todos');
 const headers = require('./corsHeaders.js');
 const errorHandle = require('./errorHandle');
-const todos = [
-  {
-    title: '今天要刷牙',
-    id: uuidv4(),
+
+const {
+  getTodos,
+  createTodo,
+  deleteTodos,
+  deleteTodoById,
+  updateTodoById
+} = todosRouteHandlers;
+
+
+const routes = {
+  '/todos': {
+    GET: getTodos,
+    POST: createTodo,
+    DELETE: deleteTodos,
   },
-];
+  '/todos/:id': {
+    DELETE: deleteTodoById,
+    PATCH: updateTodoById,
+  }
+};
+
+function matchRoute(req) {
+  const urlSegments = req.url.split('?')[0].split('/');
+
+  for (let pattern in routes) {
+
+    const patternSegments = pattern.split('/');
+
+    if (patternSegments.length !== urlSegments.length) {
+      continue;
+    }
+
+    const params = {};
+    const isMatch = patternSegments.every((seg, i) => {
+      if (seg.startsWith(':')) {
+        params[seg.slice(1)] = urlSegments[i]; // 提取參數
+        return true;
+      }
+      return seg === urlSegments[i];
+    });
+
+    if (isMatch) {
+      return { handler: routes[pattern][req.method], params };
+    }
+  }
+
+  return null;  // 沒有匹配的路由
+}
+
 
 const requestListener = (req, res) => {
+  const { url, method } = req;
   let body = '';
 
   req.on('data', (chunk) => {
     body += chunk;
   });
 
-  if (req.url === '/todos' && req.method === 'GET') {
-    res.writeHead(200, headers);
-    res.write(JSON.stringify(todos));
-    res.end();
-  } else if (req.url === '/todos' && req.method === 'POST') {
-    req.on('end', () => {
-      try {
-        const { title } = JSON.parse(body);
-        if (title !== undefined) {
-          const newTodo = {
-            title,
-            id: uuidv4(),
-          };
-          todos.push(newTodo);
-          res.writeHead(201, headers);
-          res.write(
-            JSON.stringify({
-              status: 'success',
-              data: todos,
-            })
-          );
-        } else {
-          errorHandle(res);
+  req.on('end', () => {
+
+    let data = {}; 
+    try {
+        data = JSON.parse(body); 
+    } catch (error) {
+        if (body !== '') {
+            errorHandle(res, error);
+            return;
         }
-
-        res.end();
-      } catch (error) {
-        errorHandle(res);
-      }
-    });
-  } else if (req.url === '/todos' && req.method === 'DELETE') {
-    todos.length = 0;
-    res.writeHead(200, headers);
-    res.write(
-      JSON.stringify({
-        status: 'success',
-        data: todos,
-      })
-    );
-    res.end();
-  } else if (req.url.startsWith('/todos/') && req.method === 'DELETE') {
-    const id = req.url.split('/').pop();
-
-    const index = todos.findIndex((todo) => todo.id == id);
-
-    if (index !== -1) {
-      todos.splice(index, 1);
-      res.writeHead(200, headers);
-      res.write(
-        JSON.stringify({
-          status: 'success',
-          data: todos,
-        })
-      );
-    } else {
-      errorHandle(res);
     }
 
-    res.end();
-  } else if (req.url.startsWith('/todos') && req.method === 'PATCH') {
-    req.on('end', () => {
-      try {
-        const { title } = JSON.parse(body);
-        const id = req.url.split('/').pop();
+    const route = matchRoute(req);
 
-        const index = todos.findIndex((todo) => todo.id == id);
+    if (route && route.handler) {
+      return route.handler(req, res, data, route.params);
+    }
 
-        if (title !== undefined && index !== -1) {
-          todos[index].title = title;
-          res.writeHead(200, headers);
-          res.write(
-            JSON.stringify({
-              status: 'success',
-              data: todos,
-            })
-          );
-          res.end();
-        } else {
-          errorHandle(res);
-        }
-      } catch (error) {
-        errorHandle(res);
-      }
-    });
-  } else if (req.method === 'OPTIONS') {
-    res.writeHead(200, headers);
-    res.end();
-  } else {
     res.writeHead(404, headers);
     res.write(
       JSON.stringify({
@@ -111,6 +86,10 @@ const requestListener = (req, res) => {
         message: '無此網站路由',
       })
     );
+    res.end();
+  });
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200, headers);
     res.end();
   }
 };

@@ -1,6 +1,6 @@
 const headers = require('./corsHeaders.js');
 
-function errorHandle(res) {
+function errorHandle(res, err) {
   res.writeHead(400, headers);
   res.write(
     JSON.stringify({
